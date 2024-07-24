@@ -1,15 +1,18 @@
 import requests
 import json
 from datetime import datetime, timedelta
-import os
-##For competitor data
-#from asins_competitor import asins
-#suffix = "competitor"
-# # For our data
+import pandas as pd
+import logging
 from asins_our import asins
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 suffix = "our_asins"
+
 def convert_unix_time(value):
     return datetime.utcfromtimestamp((value + 21564000) * 60).strftime('%Y-%m-%d %H:%M:%S')
+
 def fetch_keepa_data(asins, access_key):
     domain_id = 1  # assuming Amazon US
     all_coupons_data = []
@@ -18,16 +21,16 @@ def fetch_keepa_data(asins, access_key):
     all_sales_history_data = []
     all_sales_rank_data = []
     all_category_rank_data = []
+
     for asin in asins:
         url = f'https://api.keepa.com/product?key={access_key}&domain={domain_id}&asin={asin}'
         response = requests.get(url)
         if response.status_code == 200:
+            logging.info(f"Successfully fetched data for ASIN: {asin}")
             data = response.json()
-            with open(f'keepa_history.json', 'w') as f:
-                json.dump(data, f, indent=4)
             if data['products']:
                 product = data['products'][0]
-                 # Coupon Data
+                # Coupon Data
                 if product['productType'] == 0 and 'couponHistory' in product:
                     coupon_data = [
                         {
@@ -42,7 +45,7 @@ def fetch_keepa_data(asins, access_key):
                             ) if product['couponHistory'][i+2] != 0 else None
                         }
                         for i in range(0, len(product['couponHistory']), 3)
-                        if datetime.utcfromtimestamp((product['couponHistory'][i] + 21564000) * 60).year >= 2024 and  datetime.utcfromtimestamp((product['couponHistory'][i] + 21564000) * 60).month >= 7 and datetime.utcfromtimestamp((product['couponHistory'][i] + 21564000) * 60).day >= 9
+                        if datetime.utcfromtimestamp((product['couponHistory'][i] + 21564000) * 60).date() >= datetime.now().date() - timedelta(days=7)
                     ]
                     if coupon_data:
                         all_coupons_data.append({
@@ -57,7 +60,7 @@ def fetch_keepa_data(asins, access_key):
                             'price': product['csv'][8][i+1] / 100  # Convert price from cents to dollars
                         }
                         for i in range(0, len(product['csv'][8]), 2)
-                        if product['csv'][8][i+1] != -1 and datetime.utcfromtimestamp((product['csv'][8][i] + 21564000) * 60).year >= 2024
+                        if product['csv'][8][i+1] != -1 and datetime.utcfromtimestamp((product['csv'][8][i] + 21564000) * 60).date() >= datetime.now().date() - timedelta(days=7)
                     ]
                     if lightning_deal_data:
                         all_lightning_deals_data.append({
@@ -72,7 +75,7 @@ def fetch_keepa_data(asins, access_key):
                             'price': product['csv'][1][i+1] / 100  # Convert price from cents to dollars
                         }
                         for i in range(0, len(product['csv'][1]), 2)
-                        if product['csv'][1][i+1] != -1 and datetime.utcfromtimestamp((product['csv'][1][i] + 21564000) * 60).year >= 2024
+                        if product['csv'][1][i+1] != -1 and datetime.utcfromtimestamp((product['csv'][1][i] + 21564000) * 60).date() >= datetime.now().date() - timedelta(days=7)
                     ]
                     if new_price_history_data:
                         all_new_price_history_data.append({
@@ -87,7 +90,7 @@ def fetch_keepa_data(asins, access_key):
                             'price': product['csv'][0][i+1] / 100 if product['csv'][0][i+1] != -1 else -1  # Convert price from cents to dollars, leave -1 as it is
                         }
                         for i in range(0, len(product['csv'][0]), 2)
-                        if datetime.utcfromtimestamp((product['csv'][0][i] + 21564000) * 60).year >= 2024
+                        if datetime.utcfromtimestamp((product['csv'][0][i] + 21564000) * 60).date() >= datetime.now().date() - timedelta(days=7)
                     ]
                     all_sales_history_data.append({
                         'asin': asin,
@@ -101,7 +104,7 @@ def fetch_keepa_data(asins, access_key):
                             'rank': product['csv'][3][i+1]
                         }
                         for i in range(0, len(product['csv'][3]), 2)
-                        if datetime.utcfromtimestamp((product['csv'][3][i] + 21564000) * 60).year >= 2024
+                        if datetime.utcfromtimestamp((product['csv'][3][i] + 21564000) * 60).date() >= datetime.now().date() - timedelta(days=7)
                     ]
                     all_sales_rank_data.append({
                         'asin': asin,
@@ -118,7 +121,7 @@ def fetch_keepa_data(asins, access_key):
                                     'rank': product['salesRanks'][category_id][i+1]
                                 }
                                 for i in range(0, len(product['salesRanks'][category_id]), 2)
-                                if datetime.utcfromtimestamp((product['salesRanks'][category_id][i] + 21564000) * 60).year >= 2024
+                                if datetime.utcfromtimestamp((product['salesRanks'][category_id][i] + 21564000) * 60).date() >= datetime.now().date() - timedelta(days=7)
                             ]
                             if category_rank_data:
                                 all_category_rank_data.append({
@@ -127,173 +130,82 @@ def fetch_keepa_data(asins, access_key):
                                     'CATEGORY_RANK': category_rank_data
                                 })
         else:
-            print(f"Failed to fetch data for ASIN: {asin}, Status Code: {response.status_code}")
-    # Create the folder if it doesn't exist
-    folder_name = f'Data_{suffix.capitalize()}'
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
-    # Save all_asins_data to separate JSON files in the respective folder
-    with open(f'{folder_name}/coupon_history_{suffix}.json', 'w') as f:
-        json.dump(all_coupons_data, f, indent=4)
-    with open(f'{folder_name}/lightening_deal_{suffix}.json', 'w') as f:
-        json.dump(all_lightning_deals_data, f, indent=4)
-    with open(f'{folder_name}/new_price_history_{suffix}.json', 'w') as f:
-        json.dump(all_new_price_history_data, f, indent=4)
-    with open(f'{folder_name}/sales_history_{suffix}.json', 'w') as f:
-        json.dump(all_sales_history_data, f, indent=4)
-    with open(f'{folder_name}/bsr_rank_history_{suffix}.json', 'w') as f:
-        json.dump(all_sales_rank_data, f, indent=4)
-    with open(f'{folder_name}/category_rank_history_{suffix}.json', 'w') as f:
-        json.dump(all_category_rank_data, f, indent=4)
+            logging.error(f"Failed to fetch data for ASIN: {asin}, Status Code: {response.status_code}")
+
+    # Convert lists to DataFrames
+    coupon_history_df = pd.DataFrame([entry for product in all_coupons_data for entry in product['COUPON_HISTORY']])
+    coupon_history_df['asin'] = [product['asin'] for product in all_coupons_data for _ in product['COUPON_HISTORY']]
+    logging.info(f"Coupon history data processed with {len(coupon_history_df)} records")
+
+    lightning_deal_df = pd.DataFrame([entry for product in all_lightning_deals_data for entry in product['LIGHTNING_DEAL']])
+    lightning_deal_df['asin'] = [product['asin'] for product in all_lightning_deals_data for _ in product['LIGHTNING_DEAL']]
+    logging.info(f"Lightning deal data processed with {len(lightning_deal_df)} records")
+
+    new_price_history_df = pd.DataFrame([entry for product in all_new_price_history_data for entry in product['NEW_PRICE_HISTORY']])
+    new_price_history_df['asin'] = [product['asin'] for product in all_new_price_history_data for _ in product['NEW_PRICE_HISTORY']]
+    logging.info(f"New price history data processed with {len(new_price_history_df)} records")
+
+    sales_history_df = pd.DataFrame([entry for product in all_sales_history_data for entry in product['SALES']])
+    sales_history_df['asin'] = [product['asin'] for product in all_sales_history_data for _ in product['SALES']]
+    logging.info(f"Sales history data processed with {len(sales_history_df)} records")
+
+    sales_rank_df = pd.DataFrame([entry for product in all_sales_rank_data for entry in product['SALES_RANK']])
+    sales_rank_df['asin'] = [product['asin'] for product in all_sales_rank_data for _ in product['SALES_RANK']]
+    logging.info(f"Sales rank data processed with {len(sales_rank_df)} records")
+
+    category_rank_df = pd.DataFrame([entry for product in all_category_rank_data for entry in product['CATEGORY_RANK']])
+    category_rank_df['asin'] = [product['asin'] for product in all_category_rank_data for _ in product['CATEGORY_RANK']]
+    category_rank_df['category'] = [product['category'] for product in all_category_rank_data for _ in product['CATEGORY_RANK']]
+    logging.info(f"Category rank data processed with {len(category_rank_df)} records")
+
     return {
-        "COUPON_HISTORY": all_coupons_data,
-        "LIGHTNING_DEAL": all_lightning_deals_data,
-        "NEW_PRICE_HISTORY": all_new_price_history_data,
-        "SALES": all_sales_history_data,
-        "SALES_RANK": all_sales_rank_data,
-            "CATEGORY_RANK": all_category_rank_data
+        "COUPON_HISTORY": coupon_history_df,
+        "LIGHTNING_DEAL": lightning_deal_df,
+        "NEW_PRICE_HISTORY": new_price_history_df,
+        "SALES": sales_history_df,
+        "SALES_RANK": sales_rank_df,
+        "CATEGORY_RANK": category_rank_df
     }
+
+# Fetch and process Keepa data
 access_key = '869gl1g1tngcp153v93v49a47eg401fhr56em2u4tkn228ap5c70hi0o3tfjpgf7'
+logging.info("Starting to fetch Keepa data")
 data = fetch_keepa_data(asins, access_key)
-print(json.dumps(data, indent=4))
+logging.info("Keepa data fetched and processed")
 
+# Filter the dataframes for the last 7 days
+end_date = datetime.now()
+start_date = end_date - timedelta(days=7)
 
-
-
-
-
-import json
-import csv
-def read_json_file(filepath):
-    with open(filepath, 'r') as file:
-        return json.load(file)
-def save_coupon_history_to_csv(coupon_history_data, csv_filepath):
-    with open(csv_filepath, 'w', newline='') as csvfile:
-        fieldnames = ['asin', 'date', 'one_time_coupon', 'subscribe_and_save_coupon']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in coupon_history_data:
-            asin = item['asin']
-            for coupon_entry in item['COUPON_HISTORY']:
-                writer.writerow({
-                    'asin': asin,
-                    'date': coupon_entry['date'],
-                    'one_time_coupon': coupon_entry['one_time_coupon'],
-                    'subscribe_and_save_coupon': coupon_entry['subscribe_and_save_coupon']
-                })
-def save_lightning_deal_to_csv(lightning_deal_data, csv_filepath):
-    with open(csv_filepath, 'w', newline='') as csvfile:
-        fieldnames = ['asin', 'date', 'price']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in lightning_deal_data:
-            asin = item['asin']
-            for deal_entry in item['LIGHTNING_DEAL']:
-                writer.writerow({
-                    'asin': asin,
-                    'date': deal_entry['date'],
-                    'price': deal_entry['price']
-                })
-def save_new_price_history_to_csv(new_price_history_data, csv_filepath):
-    with open(csv_filepath, 'w', newline='') as csvfile:
-        fieldnames = ['asin', 'date', 'price']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in new_price_history_data:
-            asin = item['asin']
-            for price_entry in item['NEW_PRICE_HISTORY']:
-                writer.writerow({
-                    'asin': asin,
-                    'date': price_entry['date'],
-                    'price': price_entry['price']
-                })
-def save_sales_history_to_csv(sales_history_data, csv_filepath):
-    with open(csv_filepath, 'w', newline='') as csvfile:
-        fieldnames = ['asin', 'date', 'price']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in sales_history_data:
-            asin = item['asin']
-            for sales_entry in item['SALES']:
-                writer.writerow({
-                    'asin': asin,
-                    'date': sales_entry['date'],
-                    'price': sales_entry['price']
-                })
-def save_sales_rank_to_csv(sales_rank_data, csv_filepath):
-    with open(csv_filepath, 'w', newline='') as csvfile:
-        fieldnames = ['asin', 'date', 'rank']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in sales_rank_data:
-            asin = item['asin']
-            for rank_entry in item['SALES_RANK']:
-                writer.writerow({
-                    'asin': asin,
-                    'date': rank_entry['date'],
-                    'rank': rank_entry['rank']
-                })
-def save_category_rank_to_csv(category_rank_data, csv_filepath):
-    with open(csv_filepath, 'w', newline='') as csvfile:
-        fieldnames = ['asin', 'category', 'date', 'rank']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for item in category_rank_data:
-            asin = item['asin']
-            category = item['category']
-            for rank_entry in item['CATEGORY_RANK']:
-                writer.writerow({
-                    'asin': asin,
-                    'category': category,
-                    'date': rank_entry['date'],
-                    'rank': rank_entry['rank']
-                })
-# Read the JSON files and save to CSV
-json_csv_pairs = [
-    ('Data_Our_asins/coupon_history_our_asins.json', 'coupon_history.csv', save_coupon_history_to_csv),
-    ('Data_Our_asins/lightening_deal_our_asins.json', 'lightning_deal.csv', save_lightning_deal_to_csv),
-    ('Data_Our_asins/new_price_history_our_asins.json', 'new_price_history.csv', save_new_price_history_to_csv),
-    ('Data_Our_asins/sales_history_our_asins.json', 'sales_history.csv', save_sales_history_to_csv),
-    ('Data_Our_asins/bsr_rank_history_our_asins.json', 'sales_rank.csv', save_sales_rank_to_csv),
-    ('Data_Our_asins/category_rank_history_our_asins.json', 'category_rank.csv', save_category_rank_to_csv)
-]
-for json_filepath, csv_filepath, save_function in json_csv_pairs:
-    data = read_json_file(json_filepath)
-    save_function(data, csv_filepath)
-    print(f'{json_filepath} data has been saved to {csv_filepath}')
-
-import pandas as pd
-# Read the CSV files
-category_rank_df = pd.read_csv("category_rank.csv")
-coupon_history_df = pd.read_csv("coupon_history.csv")
-lightning_deal_df = pd.read_csv("lightning_deal.csv")
-new_price_history_df = pd.read_csv("new_price_history.csv")
-sales_history_df = pd.read_csv("sales_history.csv")
-sales_rank_df = pd.read_csv("sales_rank.csv")
-# Convert the 'date' column to datetime format
 def convert_date_column(df):
     df['date'] = pd.to_datetime(df['date'])
     return df
-category_rank_df = convert_date_column(category_rank_df)
-coupon_history_df = convert_date_column(coupon_history_df)
-lightning_deal_df = convert_date_column(lightning_deal_df)
-new_price_history_df = convert_date_column(new_price_history_df)
-sales_history_df = convert_date_column(sales_history_df)
-sales_rank_df = convert_date_column(sales_rank_df)
-# Filter the dataframes for the dates 8-July-2024 and 9-July-2024
-start_date = '2024-07-18'
-end_date = '2024-07-22'
-def filter_by_date(df):
+
+def filter_by_date(df, start_date, end_date):
     return df[(df['date'] >= start_date) & (df['date'] <= end_date)]
-filtered_category_rank_df = filter_by_date(category_rank_df)
-filtered_coupon_history_df = filter_by_date(coupon_history_df)
-filtered_lightning_deal_df = filter_by_date(lightning_deal_df)
-filtered_new_price_history_df = filter_by_date(new_price_history_df)
-filtered_sales_history_df = filter_by_date(sales_history_df)
-filtered_sales_rank_df = filter_by_date(sales_rank_df)
-filtered_category_rank_df.to_csv("filtered_category_rank_df.csv")
-filtered_coupon_history_df.to_csv("filtered_coupon_history_df.csv")
-filtered_lightning_deal_df.to_csv("filtered_lightning_deal_df.csv")
-filtered_new_price_history_df.to_csv("filtered_new_price_history_df.csv")
-filtered_sales_history_df.to_csv("filtered_sales_history_df.csv")
-filtered_sales_rank_df.to_csv("filtered_sales_rank_df.csv")
+
+filtered_category_rank_df = filter_by_date(convert_date_column(data["CATEGORY_RANK"]), start_date, end_date)
+filtered_coupon_history_df = filter_by_date(convert_date_column(data["COUPON_HISTORY"]), start_date, end_date)
+filtered_lightning_deal_df = filter_by_date(convert_date_column(data["LIGHTNING_DEAL"]), start_date, end_date)
+filtered_new_price_history_df = filter_by_date(convert_date_column(data["NEW_PRICE_HISTORY"]), start_date, end_date)
+filtered_sales_history_df = filter_by_date(convert_date_column(data["SALES"]), start_date, end_date)
+filtered_sales_rank_df = filter_by_date(convert_date_column(data["SALES_RANK"]), start_date, end_date)
+
+# Print filtered dataframes for verification
+logging.info("Filtered category rank data")
+print(filtered_category_rank_df)
+
+logging.info("Filtered coupon history data")
+print(filtered_coupon_history_df)
+
+logging.info("Filtered lightning deal data")
+print(filtered_lightning_deal_df)
+
+logging.info("Filtered new price history data")
+print(filtered_new_price_history_df)
+
+logging.info("Filtered sales history data")
+print(filtered_sales_history_df)
+
+logging.info("Filtered sales rank data")
+print(filtered_sales_rank_df)
