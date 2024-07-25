@@ -3,10 +3,17 @@ import json
 from datetime import datetime, timedelta
 import pandas as pd
 import logging
+import sys
 from asins_our import asins
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging to console
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 suffix = "our_asins"
 
